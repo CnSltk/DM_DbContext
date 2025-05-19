@@ -230,13 +230,6 @@ app.MapGet("/api/employees/{id:int}", async (int id, DeviceContext db, Cancellat
     }
 });
 
-
-
-
-
-
-
-
 app.UseHttpsRedirection();
 app.UseAuthorization();
 app.Run();
