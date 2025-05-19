@@ -2,4 +2,5 @@ I decided not to split the code into several projects for better readability.
 Not to jump between different files and keep classes easily accessible. 
 Another reason is to only manage one .csproj file and not do deal with referencing cycles while the projet builds.
 The organization of the project and structure is more readable and clear when only using one project
-I have added an example appsettings file inside the project for the instructions in order for the project to execute properly
+I have added an example appsettings file inside the project for the instructions in order for the project to execute properly.
+The launchSettings file uploaded spesifies that the code should run on port 5300 for HTTP and HTTPS.
