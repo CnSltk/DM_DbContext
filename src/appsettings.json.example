@@ -10,5 +10,3 @@
    "DeviceManager": "Server=<YOUR_SERVER>;Database=<YOUR_DB>;User Id=<USER>;Password=<PASSWORD>;TrustServerCertificate=True;"
   }
 }
-
-//THIS IS HOW YOUR APPSETTINGS.JSON SHOULD LOOK LIKE IN ORDER TO EXECUTE THE PROGRAM
