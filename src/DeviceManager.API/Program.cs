@@ -22,6 +22,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseHttpsRedirection();
+app.UseAuthorization();
 /*
  * --------------------
  * -----DEVICES------
@@ -48,10 +50,7 @@ app.MapGet("/api/devices", async (DeviceContext db, CancellationToken ct) =>
 });
 
 //GET DEVICE BY ID
-app.MapGet("/api/devices/{id:int}", async (
-    int id,
-    DeviceContext db,
-    CancellationToken ct) =>
+app.MapGet("/api/devices/{id:int}", async (int id, DeviceContext db, CancellationToken ct) =>
 {
     try
     {
@@ -66,24 +65,21 @@ app.MapGet("/api/devices/{id:int}", async (
                 AdditionalProperties = d.AdditionalProperties,
                 CurrentEmployee = d.DeviceEmployees
                     .Where(de => de.ReturnDate == null)
-                    .Select(de => new CurrentEmployeeDto {
+                    .Select(de => new {
                         Id       = de.Employee.Id,
                         FullName = de.Employee.Person.FirstName + " " + de.Employee.Person.LastName
                     })
                     .FirstOrDefault()
             })
             .FirstOrDefaultAsync(ct);
-
         if (raw == null)
             return Results.NotFound();
-        var detail = new DeviceDetailDto {
-            DeviceTypeName       = raw.DeviceTypeName,
-            IsEnabled            = raw.IsEnabled,
-            AdditionalProperties = JsonSerializer.Deserialize<object>(raw.AdditionalProperties)!,
-            CurrentEmployee      = raw.CurrentEmployee
-        };
-
-        return Results.Ok(detail);
+        return Results.Ok(new {
+            deviceTypeName       = raw.DeviceTypeName,
+            isEnabled            = raw.IsEnabled,
+            additionalProperties = JsonSerializer.Deserialize<object>(raw.AdditionalProperties),
+            currentEmployee      = raw.CurrentEmployee
+        });
     }
     catch (Exception ex)
     {
@@ -93,10 +89,7 @@ app.MapGet("/api/devices/{id:int}", async (
 
 
 //POST CREATE DEVICE
-app.MapPost("/api/devices", async (
-    [FromBody] DeviceCreateDto dto,
-    DeviceContext db,
-    CancellationToken ct) =>
+app.MapPost("/api/devices", async ([FromBody] DeviceCreateDto dto, DeviceContext db, CancellationToken ct) =>
 {
     try
     {
@@ -126,11 +119,7 @@ app.MapPost("/api/devices", async (
 });
 
 //PUT UPDATE DEVICE
-app.MapPut("/api/devices/{id:int}", async (
-    int id,
-    [FromBody] DeviceCreateDto dto,
-    DeviceContext db,
-    CancellationToken ct) =>
+app.MapPut("/api/devices/{id:int}", async (int id, [FromBody] DeviceCreateDto dto, DeviceContext db, CancellationToken ct) =>
 {
     try
     {
@@ -231,6 +220,4 @@ app.MapGet("/api/employees/{id:int}", async (int id, DeviceContext db, Cancellat
     }
 });
 
-app.UseHttpsRedirection();
-app.UseAuthorization();
 app.Run();
