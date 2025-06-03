@@ -162,6 +162,31 @@ namespace WebApplication1.Context
                       .HasForeignKey(de => de.EmployeeId)
                       .HasConstraintName("FK_DeviceEmployee_Employee");
             });
+            modelBuilder.Entity<Role>(entity =>
+            {
+                  entity.ToTable("Roles");
+                  entity.HasKey(r => r.Id);
+                  entity.Property(r => r.Name).IsRequired().HasMaxLength(50);
+                  entity.HasIndex(r => r.Name).IsUnique();
+            });
+            modelBuilder.Entity<Account>(entity =>
+            {
+                  entity.ToTable("Accounts");
+                  entity.HasKey(a => a.Id);
+                  entity.Property(a=>a.Username).IsRequired().HasMaxLength(100);
+                  entity.HasIndex(a=>a.Username).IsUnique();
+                  entity.Property(a=>a.PasswordHash).IsRequired();
+                  entity.Property(a=>a.PasswordSalt).IsRequired();
+                  entity.HasOne(a => a.Employee)
+                        .WithOne(e => e.Account)
+                        .HasForeignKey<Account>(a => a.EmployeeId)
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                  entity.HasOne(a => a.Role)
+                        .WithMany(r => r.Accounts)
+                        .HasForeignKey(a => a.RoleId)
+                        .OnDelete(DeleteBehavior.Restrict);
+            });
         }
     }
 }
