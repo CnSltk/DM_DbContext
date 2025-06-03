@@ -17,4 +17,5 @@ public partial class Employee
     public virtual Person Person { get; set; } = null!;
 
     public virtual Position Position { get; set; } = null!;
+    public Account? Account { get; set; }
 }
