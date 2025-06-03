@@ -5,17 +5,34 @@ namespace WebApplication1.Context
 {
     public class DeviceContext : DbContext
     {
-        public DeviceContext(DbContextOptions<DeviceContext> options)
+          private readonly IConfiguration _config;
+        public DeviceContext(DbContextOptions<DeviceContext> options,IConfiguration config)
             : base(options)
         {
+              _config = config;
         }
 
+        public DeviceContext() { }
         public DbSet<DeviceType> DeviceTypes { get; set; }
         public DbSet<Position> Positions { get; set; }
         public DbSet<Person> Persons { get; set; }
         public DbSet<Device> Devices { get; set; }
         public DbSet<Employee> Employees { get; set; }
         public DbSet<DeviceEmployee> DeviceEmployees { get; set; }
+
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        {
+              if (!optionsBuilder.IsConfigured)
+              {
+                    var config = new ConfigurationBuilder()
+                          .SetBasePath(Directory.GetCurrentDirectory())
+                          .AddJsonFile("appsettings.json", optional: false)
+                          .Build();
+                    var conn = config.GetConnectionString("DeviceManager")
+                                          ?? throw new InvalidOperationException("Could not find connection string");
+                    optionsBuilder.UseSqlServer(conn);
+              } 
+        }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
