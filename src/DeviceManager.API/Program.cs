@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -86,7 +87,7 @@ app.MapGet("/api/devices", async (DeviceContext db, CancellationToken ct) =>
     {
         var list = await db.Devices
             .Select(d => new DeviceDto {
-                Id   = d.Id,
+                Id = d.Id,
                 Name = d.Name
             })
             .ToListAsync(ct);
@@ -97,13 +98,17 @@ app.MapGet("/api/devices", async (DeviceContext db, CancellationToken ct) =>
     {
         return Results.Problem(detail: ex.Message, statusCode: 500);
     }
-});
+})
+.RequireAuthorization("AdminOnly");
 
 //GET DEVICE BY ID
-app.MapGet("/api/devices/{id:int}", async (int id, DeviceContext db, CancellationToken ct) =>
+app.MapGet("/api/devices/{id:int}", async (int id, DeviceContext db, HttpContext httpContext, CancellationToken ct) =>
 {
     try
     {
+        var userRole = httpContext.User.FindFirstValue(ClaimTypes.Role)!;
+        var userEmpId = int.Parse(httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
         var raw = await db.Devices
             .Include(d => d.DeviceType)
             .Include(d => d.DeviceEmployees.Where(de => de.ReturnDate == null))
@@ -111,14 +116,18 @@ app.MapGet("/api/devices/{id:int}", async (int id, DeviceContext db, Cancellatio
             .Where(d => d.Id == id)
             .Select(d => new
             {
-                DeviceTypeName       = d.DeviceType.Name,
-                IsEnabled            = d.IsEnabled,
+                DeviceTypeName = d.DeviceType.Name,
+                IsEnabled = d.IsEnabled,
                 AdditionalProperties = d.AdditionalProperties,
+                AssignedEmployeeId = d.DeviceEmployees
+                    .Where(de => de.ReturnDate == null)
+                    .Select(de => de.Employee.Id)
+                    .FirstOrDefault(),
                 Employee = d.DeviceEmployees
                     .Where(de => de.ReturnDate == null)
                     .Select(de => new EmployeeDto
                     {
-                        Id   = de.Employee.Id,
+                        Id = de.Employee.Id,
                         Name = de.Employee.Person.FirstName + " " + de.Employee.Person.LastName
                     })
                     .FirstOrDefault()
@@ -126,15 +135,19 @@ app.MapGet("/api/devices/{id:int}", async (int id, DeviceContext db, Cancellatio
             .FirstOrDefaultAsync(ct);
         if (raw == null)
             return Results.NotFound();
+
+        if (userRole != "Admin" && raw.AssignedEmployeeId != userEmpId)
+            return Results.Forbid();
+
         var jsonString = string.IsNullOrWhiteSpace(raw.AdditionalProperties)
             ? "{}"
             : raw.AdditionalProperties;
         var detail = new DeviceDetailsDto
         {
-            DeviceTypeName       = raw.DeviceTypeName,
-            IsEnabled            = raw.IsEnabled,
+            DeviceTypeName = raw.DeviceTypeName,
+            IsEnabled = raw.IsEnabled,
             AdditionalProperties = JsonSerializer.Deserialize<object>(jsonString)!,
-            Employee             = raw.Employee
+            Employee = raw.Employee
         };
         return Results.Ok(detail);
     }
@@ -142,26 +155,34 @@ app.MapGet("/api/devices/{id:int}", async (int id, DeviceContext db, Cancellatio
     {
         return Results.Problem(detail: ex.Message, statusCode: 500);
     }
-});
-
+})
+.RequireAuthorization();
 
 // POST CREATE DEVICE
-app.MapPost("/api/devices", async ([FromBody] DeviceCreateDto dto, DeviceContext db, CancellationToken ct) =>
+app.MapPost("/api/devices", async ([FromBody] DeviceCreateDto dto, DeviceContext db, HttpContext httpContext, CancellationToken ct) =>
 {
     try
     {
+        // validation: Name and DeviceTypeName must not be empty
+        if (string.IsNullOrWhiteSpace(dto.Name))
+            return Results.BadRequest("Device name is required.");
+        if (string.IsNullOrWhiteSpace(dto.DeviceTypeName))
+            return Results.BadRequest("DeviceTypeName is required.");
+
         var type = await db.DeviceTypes
             .SingleOrDefaultAsync(t => t.Name == dto.DeviceTypeName, ct);
         if (type == null)
             return Results.BadRequest($"Unknown DeviceType '{dto.DeviceTypeName}'.");
+
         var json = dto.AdditionalProperties == null
             ? "{}"
             : JsonSerializer.Serialize(dto.AdditionalProperties);
+
         var device = new Device {
-            Name                 = dto.Name,
-            IsEnabled            = dto.IsEnabled,
+            Name = dto.Name,
+            IsEnabled = dto.IsEnabled,
             AdditionalProperties = json,
-            DeviceTypeId         = type.Id
+            DeviceTypeId = type.Id
         };
         db.Devices.Add(device);
         await db.SaveChangesAsync(ct);
@@ -174,16 +195,33 @@ app.MapPost("/api/devices", async ([FromBody] DeviceCreateDto dto, DeviceContext
     {
         return Results.Problem(detail: ex.Message, statusCode: 500);
     }
-});
+})
+.RequireAuthorization("AdminOnly");
 
 // PUT UPDATE DEVICE
-app.MapPut("/api/devices/{id:int}", async (int id, [FromBody] DeviceCreateDto dto, DeviceContext db, CancellationToken ct) =>
+app.MapPut("/api/devices/{id:int}", async (int id, [FromBody] DeviceCreateDto dto, DeviceContext db, HttpContext httpContext, CancellationToken ct) =>
 {
-    try
+    var raw = await db.Devices
+        .Include(d => d.DeviceEmployees.Where(de => de.ReturnDate == null))
+            .ThenInclude(de => de.Employee)
+        .FirstOrDefaultAsync(d => d.Id == id, ct);
+    if (raw == null)
+        return Results.NotFound();
+
+    var assignedEmpId = raw.DeviceEmployees
+        .Select(de => de.Employee.Id)
+        .FirstOrDefault(); // 0 if none, but then treat as AdminOnly
+
+    var userRole = httpContext.User.FindFirstValue(ClaimTypes.Role)!;
+    var userEmpId = int.Parse(httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+    if (userRole == "Admin")
     {
-        var device = await db.Devices.FindAsync(new object[]{ id }, ct);
-        if (device == null) 
-            return Results.NotFound();
+        //name and devicetype validation
+        if (string.IsNullOrWhiteSpace(dto.Name))
+            return Results.BadRequest("Device name is required.");
+        if (string.IsNullOrWhiteSpace(dto.DeviceTypeName))
+            return Results.BadRequest("DeviceTypeName is required.");
+        var device = await db.Devices.FindAsync(new object[]{ id }, ct)!;
         var type = await db.DeviceTypes
             .SingleOrDefaultAsync(t => t.Name == dto.DeviceTypeName, ct);
         if (type == null)
@@ -191,21 +229,28 @@ app.MapPut("/api/devices/{id:int}", async (int id, [FromBody] DeviceCreateDto dt
         var json = dto.AdditionalProperties == null
             ? "{}"
             : JsonSerializer.Serialize(dto.AdditionalProperties);
-        device.Name                 = dto.Name;
-        device.IsEnabled            = dto.IsEnabled;
+        device.Name = dto.Name;
+        device.IsEnabled = dto.IsEnabled;
         device.AdditionalProperties = json;
-        device.DeviceTypeId         = type.Id;
+        device.DeviceTypeId = type.Id;
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }
-    catch (Exception ex)
-    {
-        return Results.Problem(detail: ex.Message, statusCode: 500);
-    }
-});
+    if (assignedEmpId != userEmpId)
+        return Results.Forbid();
+    if (dto.AdditionalProperties == null)
+        return Results.BadRequest("AdditionalProperties is required for user update.");
+    var ownedDevice = await db.Devices.FindAsync(new object[]{ id }, ct)!;
+    var newJson = JsonSerializer.Serialize(dto.AdditionalProperties);
+    ownedDevice.AdditionalProperties = newJson;
+    await db.SaveChangesAsync(ct);
+    return Results.NoContent();
+})
+.RequireAuthorization();
+
 
 //DELETE DEVICE
-app.MapDelete("/api/devices/{id:int}", async (int id, DeviceContext db, CancellationToken ct) =>
+app.MapDelete("/api/devices/{id:int}", async (int id, DeviceContext db, HttpContext httpContext, CancellationToken ct) =>
 {
     try
     {
@@ -219,7 +264,8 @@ app.MapDelete("/api/devices/{id:int}", async (int id, DeviceContext db, Cancella
     {
         return Results.Problem(detail: ex.Message, statusCode: 500);
     }
-});
+})
+.RequireAuthorization("AdminOnly");
 
 /*
  * --------------------
@@ -234,7 +280,7 @@ app.MapGet("/api/employees", async (DeviceContext db, CancellationToken ct) =>
         var list = await db.Employees
             .Include(e => e.Person)
             .Select(e => new EmployeeDto {
-                Id       = e.Id,
+                Id = e.Id,
                 Name = e.Person.FirstName + " " + e.Person.LastName
             })
             .ToListAsync(ct);
@@ -244,27 +290,34 @@ app.MapGet("/api/employees", async (DeviceContext db, CancellationToken ct) =>
     {
         return Results.Problem(detail: ex.Message, statusCode: 500);
     }
-});
+})
+.RequireAuthorization("AdminOnly");
 
 //GET EMPLOYEE BY ID
-app.MapGet("/api/employees/{id:int}", async (int id, DeviceContext db, CancellationToken ct) =>
+app.MapGet("/api/employees/{id:int}", async (int id, DeviceContext db, HttpContext httpContext, CancellationToken ct) =>
 {
     try
     {
+        var userRole = httpContext.User.FindFirstValue(ClaimTypes.Role)!;
+        var userEmpId = int.Parse(httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+        if (userRole != "Admin" && id != userEmpId)
+            return Results.Forbid();
+
         var emp = await db.Employees
             .Include(e => e.Person)
             .Include(e => e.Position)
             .Where(e => e.Id == id)
             .Select(e => new EmployeeDetailDto {
                 PassportNumber = e.Person.PassportNumber,
-                FirstName      = e.Person.FirstName,
-                MiddleName     = e.Person.MiddleName,
-                LastName       = e.Person.LastName,
-                PhoneNumber    = e.Person.PhoneNumber,
-                Email          = e.Person.Email,
-                Salary         = e.Salary,
-                Position       = new PositionDto { Id = e.Position.Id, Name = e.Position.Name },
-                HireDate       = e.HireDate
+                FirstName = e.Person.FirstName,
+                MiddleName = e.Person.MiddleName,
+                LastName = e.Person.LastName,
+                PhoneNumber = e.Person.PhoneNumber,
+                Email = e.Person.Email,
+                Salary = e.Salary,
+                Position = new PositionDto { Id = e.Position.Id, Name = e.Position.Name },
+                HireDate = e.HireDate
             })
             .FirstOrDefaultAsync(ct);
 
@@ -276,10 +329,48 @@ app.MapGet("/api/employees/{id:int}", async (int id, DeviceContext db, Cancellat
     {
         return Results.Problem(detail: ex.Message, statusCode: 500);
     }
-});
+})
+.RequireAuthorization();
 
+//PUT Update employees
+app.MapPut("/api/employees/{id:int}", async (int id, [FromBody] EmployeeUpdateDto dto, DeviceContext db, HttpContext httpContext, CancellationToken ct) =>
+    {
+        var validationResults = new List<ValidationResult>();
+        var validationContext = new ValidationContext(dto);
+        if (!Validator.TryValidateObject(dto, validationContext, validationResults, true))
+        {
+            var errors = validationResults.Select(vr => vr.ErrorMessage).ToArray();
+            return Results.BadRequest(errors);
+        }
+        var userRole = httpContext.User.FindFirstValue(ClaimTypes.Role)!;
+        var userEmpId = int.Parse(httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-//----------ACCOUNTS-------------------
+        if (userRole != "Admin" && id != userEmpId)
+            return Results.Forbid();
+
+        var emp = await db.Employees
+            .Include(e => e.Person)
+            .SingleOrDefaultAsync(e => e.Id == id, ct);
+        if (emp == null) return Results.NotFound();
+
+        emp.Person.FirstName = dto.FirstName;
+        emp.Person.MiddleName  = dto.MiddleName;
+        emp.Person.LastName = dto.LastName;
+        emp.Person.PhoneNumber = dto.PhoneNumber;
+        emp.Person.Email = dto.Email;
+        emp.Salary = dto.Salary;
+        emp.PositionId = dto.PositionId;
+
+        await db.SaveChangesAsync(ct);
+        return Results.NoContent();
+    })
+    .RequireAuthorization();
+
+/*
+ * --------------------
+ * -----ACCOUNT------
+ * --------------------
+ */
 
 // POST LOGIN /api/auth
 app.MapPost("/api/auth", async ([FromBody] AccountLoginDto dto, DeviceContext db, IOptions<JwtSettings> jwtOpts, CancellationToken ct) =>
@@ -323,11 +414,15 @@ app.MapPost("/api/auth", async ([FromBody] AccountLoginDto dto, DeviceContext db
 });
 
 //POST CREATE ACCOUNTS
-app.MapPost("/api/accounts", async (
-        [FromBody] AccountCreateDto dto,
-        DeviceContext db,
-        CancellationToken ct) =>
+app.MapPost("/api/accounts", async ([FromBody] AccountCreateDto dto, DeviceContext db, CancellationToken ct) =>
     {
+        var validationResults = new List<ValidationResult>();
+        var validationContext = new ValidationContext(dto);
+        if (!Validator.TryValidateObject(dto, validationContext, validationResults, true))
+        {
+            var errors = validationResults.Select(vr => vr.ErrorMessage).ToArray();
+            return Results.BadRequest(errors);
+        }
         try
         {
             var employee = await db.Employees.FindAsync(new object[] { dto.EmployeeId }, ct);
@@ -347,19 +442,19 @@ app.MapPost("/api/accounts", async (
             var hash = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(dto.Password));
             var account = new Account
             {
-                Username     = dto.Username,
+                Username = dto.Username,
                 PasswordHash = hash,
                 PasswordSalt = salt,
-                EmployeeId   = dto.EmployeeId,
-                RoleId       = role.Id
+                EmployeeId = dto.EmployeeId,
+                RoleId = role.Id
             };
             db.Accounts.Add(account);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/accounts/{account.Id}", new AccountDto
             {
-                Id         = account.Id,
-                Username   = account.Username,
-                RoleName   = role.Name,
+                Id = account.Id,
+                Username = account.Username,
+                RoleName = role.Name,
                 EmployeeId = account.EmployeeId
             });
         }
@@ -369,6 +464,7 @@ app.MapPost("/api/accounts", async (
         }
     })
     .RequireAuthorization("AdminOnly");
+
 // ─── GET ALL ACCOUNTS (AdminOnly) ───────────────────────────────────────────
 app.MapGet("/api/accounts", async (DeviceContext db, CancellationToken ct) =>
     {

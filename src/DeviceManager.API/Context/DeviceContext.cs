@@ -11,16 +11,14 @@ namespace WebApplication1.Context
         {
               _config = config;
         }
-
-        public DeviceContext() { }
-        public DbSet<DeviceType> DeviceTypes { get; set; }
-        public DbSet<Position> Positions { get; set; }
-        public DbSet<Person> Persons { get; set; }
-        public DbSet<Device> Devices { get; set; }
-        public DbSet<Employee> Employees { get; set; }
-        public DbSet<DeviceEmployee> DeviceEmployees { get; set; }
         public DbSet<Role> Roles { get; set; }
         public DbSet<Account> Accounts { get; set; }
+        public DbSet<Employee> Employees { get; set; }
+        public DbSet<Person> Persons { get; set; }
+        public DbSet<Device> Devices { get; set; }
+        public DbSet<DeviceType> DeviceTypes { get; set; }
+        public DbSet<DeviceEmployee> DeviceEmployees { get; set; }
+        public DbSet<Position> Positions { get; set; }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
