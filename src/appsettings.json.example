@@ -8,5 +8,10 @@
   "AllowedHosts": "*",
   "ConnectionStrings": {
    "DeviceManager": "Server=<YOUR_SERVER>;Database=<YOUR_DB>;User Id=<USER>;Password=<PASSWORD>;TrustServerCertificate=True;"
-  }
+  },"Jwt": {
+        "Key": "<32+CHAR_SECRET>",
+        "Issuer": "...",
+        "Audience": "...",
+        "ExpiresInMinutes": 60
+      }
 }
