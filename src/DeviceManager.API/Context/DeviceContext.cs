@@ -19,6 +19,8 @@ namespace WebApplication1.Context
         public DbSet<Device> Devices { get; set; }
         public DbSet<Employee> Employees { get; set; }
         public DbSet<DeviceEmployee> DeviceEmployees { get; set; }
+        public DbSet<Role> Roles { get; set; }
+        public DbSet<Account> Accounts { get; set; }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
