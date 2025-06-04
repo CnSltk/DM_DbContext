@@ -26,12 +26,12 @@ var jwtSettings = jwtSection.Get<JwtSettings>();
 builder.Services.AddAuthentication(options =>
     {
         options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-        options.DefaultChallengeScheme    = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
     })
     .AddJwtBearer(options =>
     {
         options.RequireHttpsMetadata = true;
-        options.SaveToken            = true;
+        options.SaveToken = true;
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer=true,
@@ -163,7 +163,6 @@ app.MapPost("/api/devices", async ([FromBody] DeviceCreateDto dto, DeviceContext
 {
     try
     {
-        // validation: Name and DeviceTypeName must not be empty
         if (string.IsNullOrWhiteSpace(dto.Name))
             return Results.BadRequest("Device name is required.");
         if (string.IsNullOrWhiteSpace(dto.DeviceTypeName))
@@ -210,13 +209,12 @@ app.MapPut("/api/devices/{id:int}", async (int id, [FromBody] DeviceCreateDto dt
 
     var assignedEmpId = raw.DeviceEmployees
         .Select(de => de.Employee.Id)
-        .FirstOrDefault(); // 0 if none, but then treat as AdminOnly
+        .FirstOrDefault();
 
     var userRole = httpContext.User.FindFirstValue(ClaimTypes.Role)!;
     var userEmpId = int.Parse(httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
     if (userRole == "Admin")
     {
-        //name and devicetype validation
         if (string.IsNullOrWhiteSpace(dto.Name))
             return Results.BadRequest("Device name is required.");
         if (string.IsNullOrWhiteSpace(dto.DeviceTypeName))
